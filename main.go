@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"path/filepath"
 	"sync"
+
+	"github.com/gorilla/websocket"
 )
 
 // templ represents a single template
@@ -24,9 +26,37 @@ func (t *templateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	t.templ.Execute(w, nil)
 }
 
+const (
+	socketBufferSize  = 1024
+	messageBufferSize = 256
+)
+
+var upgrader = &websocket.Upgrader{ReadBufferSize: socketBufferSize,
+	WriteBufferSize: socketBufferSize}
+
+func (r *room) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	socket, err := upgrader.Upgrade(w, req, nil)
+	if err != nil {
+		log.Fatal("ServeHTTP:", err)
+		return
+	}
+	client := &client{
+		socket: socket,
+		send:   make(chan []byte, messageBufferSize),
+		room:   r,
+	}
+	r.join <- client
+	defer func() { r.leave <- client }()
+	go client.write()
+	client.read()
+}
+
 func main() {
-	//root
-	http.HandleFunc("/", (&templateHandler{filename: "chat.html"}).ServeHTTP)
+	r := newRoom()
+	http.Handle("/", &templateHandler{filename: "chat.html"})
+	http.Handle("/room", r)
+	// get the room going
+	go r.run()
 	// start the web server
 	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatal("ListenAndServe:", err)

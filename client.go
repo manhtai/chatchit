@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/base64"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -10,7 +12,7 @@ import (
 type room struct {
 	// forward is a channel that holds incoming messages
 	// that should be forwarded to the other clients.
-	forward chan []byte
+	forward chan *message
 	// join is a channel for clients wishing to join the room.
 	join chan *client
 	// leave is a channel for clients wishing to leave the room.
@@ -24,18 +26,22 @@ type client struct {
 	// socket is the web socket for this client.
 	socket *websocket.Conn
 	// send is a channel on which messages are sent.
-	send chan []byte
+	send chan *message
 	// room is the room this client is chatting in.
 	room *room
+	Name string
 }
 
 func (c *client) read() {
 	defer c.socket.Close()
 	for {
-		_, msg, err := c.socket.ReadMessage()
+		var msg *message
+		err := c.socket.ReadJSON(&msg)
 		if err != nil {
 			return
 		}
+		msg.When = time.Now()
+		msg.Name = c.Name
 		c.room.forward <- msg
 	}
 }
@@ -43,7 +49,7 @@ func (c *client) read() {
 func (c *client) write() {
 	defer c.socket.Close()
 	for msg := range c.send {
-		err := c.socket.WriteMessage(websocket.TextMessage, msg)
+		err := c.socket.WriteJSON(msg)
 		if err != nil {
 			return
 		}
@@ -72,7 +78,7 @@ func (r *room) run() {
 // newRoom makes a new room.
 func newRoom() *room {
 	return &room{
-		forward: make(chan []byte),
+		forward: make(chan *message),
 		join:    make(chan *client),
 		leave:   make(chan *client),
 		clients: make(map[*client]bool),
@@ -93,10 +99,19 @@ func (r *room) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		log.Fatal("ServeHTTP:", err)
 		return
 	}
+	userName, err := req.Cookie("name")
+	if err != nil {
+		log.Fatal("Failed to get name cookie:", err)
+		return
+	}
+
+	name, _ := base64.StdEncoding.DecodeString(userName.Value)
+
 	client := &client{
 		socket: socket,
-		send:   make(chan []byte, messageBufferSize),
+		send:   make(chan *message, messageBufferSize),
 		room:   r,
+		Name:   string(name),
 	}
 	r.join <- client
 	defer func() { r.leave <- client }()

@@ -1,8 +1,8 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 
@@ -14,7 +14,7 @@ type authHandler struct {
 }
 
 func (h *authHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	_, err := r.Cookie("auth")
+	_, err := r.Cookie("name")
 	if err == http.ErrNoCookie {
 		// not authenticated
 		w.Header().Set("Location", "/login")
@@ -56,12 +56,21 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		gothic.BeginAuthHandler(w, r)
 	case "callback":
-		_, err := gothic.CompleteUserAuth(w, r)
+		user, err := gothic.CompleteUserAuth(w, r)
 		if err != nil {
 			fmt.Fprintln(w, r)
 			return
 		}
-		log.Println("TODO handle login for", provider)
+		userName := base64.StdEncoding.EncodeToString([]byte(user.Name))
+		http.SetCookie(
+			w,
+			&http.Cookie{
+				Name:  "name",
+				Value: userName,
+				Path:  "/",
+			})
+		w.Header().Set("Location", "/chat")
+		w.WriteHeader(http.StatusTemporaryRedirect)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, "Auth action %s not supported", action)

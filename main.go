@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"flag"
 	"html/template"
 	"log"
@@ -29,7 +30,14 @@ func (t *templateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		t.templ = template.Must(template.ParseFiles(filepath.Join("templates",
 			t.filename)))
 	})
-	t.templ.Execute(w, r)
+	data := map[string]interface{}{
+		"Host": r.Host,
+	}
+	if authCookie, err := r.Cookie("name"); err == nil {
+		name, _ := base64.StdEncoding.DecodeString(authCookie.Value)
+		data["Name"] = string(name)
+	}
+	t.templ.Execute(w, data)
 }
 
 func init() {
@@ -47,7 +55,7 @@ func main() {
 		gplus.New(
 			os.Getenv("GPLUS_KEY"),
 			os.Getenv("GPLUS_SECRET"),
-			"http://localhost:8080/auth/callback/google",
+			"http://localhost:8080/auth/callback/gplus",
 		),
 	)
 

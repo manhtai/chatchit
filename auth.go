@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
+
+	"github.com/markbates/goth/gothic"
 )
 
 type authHandler struct {
@@ -43,8 +45,22 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	action := segs[2]
 	provider := segs[3]
+	providerString := fmt.Sprintf("provider=%s", provider)
 	switch action {
 	case "login":
+		// TODO: Better way to attach provider to gothic
+		if r.URL.RawQuery == "" {
+			r.URL.RawQuery = providerString
+		} else {
+			r.URL.RawQuery += "&" + providerString
+		}
+		gothic.BeginAuthHandler(w, r)
+	case "callback":
+		_, err := gothic.CompleteUserAuth(w, r)
+		if err != nil {
+			fmt.Fprintln(w, r)
+			return
+		}
 		log.Println("TODO handle login for", provider)
 	default:
 		w.WriteHeader(http.StatusNotFound)

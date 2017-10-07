@@ -4,9 +4,16 @@ import (
 	"flag"
 	"html/template"
 	"log"
+	"math"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/gorilla/sessions"
+	"github.com/markbates/goth"
+	"github.com/markbates/goth/gothic"
+	"github.com/markbates/goth/providers/gplus"
 )
 
 // templ represents a single template
@@ -25,9 +32,25 @@ func (t *templateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	t.templ.Execute(w, r)
 }
 
+func init() {
+	store := sessions.NewFilesystemStore(os.TempDir(), []byte("chatchit"))
+	store.MaxLength(math.MaxInt64)
+	gothic.Store = store
+}
+
 func main() {
 	var addr = flag.String("addr", ":8080", "The addr of the  application.")
 	flag.Parse()
+
+	goth.UseProviders(
+		// Google+ provider
+		gplus.New(
+			os.Getenv("GPLUS_KEY"),
+			os.Getenv("GPLUS_SECRET"),
+			"http://localhost:8080/auth/callback/google",
+		),
+	)
+
 	r := newRoom()
 	http.Handle("/chat", MustAuth(&templateHandler{filename: "chat.html"}))
 	http.Handle("/login", &templateHandler{filename: "login.html"})
